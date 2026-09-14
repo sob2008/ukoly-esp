@@ -411,6 +411,33 @@ void setupRoutes()
         }
         sendError(request, 404, "ukol nenalezen"); });
 
+    // POST /api/categories/delete?id=X
+    server.on("/api/categories/delete", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("id")) {
+            sendError(request, 400, "id je povinne");
+            return;
+        }
+        String id = request->getParam("id")->value();
+
+        JsonDocument doc;
+        loadJsonArray(CATEGORIES_FILE, doc);
+        JsonArray arr = doc.as<JsonArray>();
+
+        for (JsonObject c : arr) {
+            const char* cid = c["id"] | "";
+            if (id == cid) {
+                c["deleted"] = true;
+                c["updatedAt"] = (long)nowTimestamp();
+                saveJsonArray(CATEGORIES_FILE, doc);
+                JsonDocument response;
+                response["ok"] = true;
+                sendJson(request, 200, response);
+                return;
+            }
+        }
+        sendError(request, 404, "kategorie nenalezena"); });
+
     server.onNotFound([](AsyncWebServerRequest *request)
                        {
         if (request->method() == HTTP_OPTIONS) {

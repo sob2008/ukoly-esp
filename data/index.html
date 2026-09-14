@@ -17,148 +17,205 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>Úkolovník</h1>
-  </header>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="app-brand">
+          <span class="app-logo" aria-hidden="true">Ú</span>
+          <h1 class="app-title">Úkolovník</h1>
+        </div>
+        <button class="sync-indicator" id="sync-indicator" type="button" title="Stav synchronizace">
+          <span class="sync-dot" id="sync-dot"></span>
+        </button>
+      </div>
+    </header>
 
-  <main>
-    <!-- ============ SEKCE: ÚKOLY ============ -->
-    <section id="view-tasks" class="view active">
-      <div class="card">
-        <form id="task-form">
+    <nav class="app-nav" aria-label="Navigace">
+      <button data-view="tasks" class="nav-btn active">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+        <span>Úkoly</span>
+      </button>
+      <button data-view="categories" class="nav-btn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5V7a2 2 0 0 0-2-2h-5.5a2 2 0 0 0-1.4.6l-6.5 6.5a2 2 0 0 0 0 2.8l5.5 5.5a2 2 0 0 0 2.8 0l6.5-6.5a2 2 0 0 0 .6-1.4Z"/><circle cx="14.5" cy="8.5" r="1.25"/></svg>
+        <span>Kategorie</span>
+      </button>
+      <button data-view="calendar" class="nav-btn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></svg>
+        <span>Kalendář</span>
+      </button>
+      <button data-view="settings" class="nav-btn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V19a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H4a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V4a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H20a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+        <span>Nastavení</span>
+      </button>
+    </nav>
+
+    <main class="content">
+      <!-- ============ SEKCE: ÚKOLY ============ -->
+      <section id="view-tasks" class="view active">
+        <ul class="task-list" id="task-list"></ul>
+        <div class="empty-state hidden" id="task-list-empty">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+          <p>Zatím žádné úkoly.</p>
+          <p class="empty-hint">Přidej první tlačítkem „+“ vpravo dole.</p>
+        </div>
+      </section>
+
+      <!-- ============ SEKCE: KATEGORIE (seznam) ============ -->
+      <section id="view-categories" class="view">
+        <ul class="category-list" id="category-list"></ul>
+        <div class="empty-state hidden" id="category-list-empty">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12.5V7a2 2 0 0 0-2-2h-5.5a2 2 0 0 0-1.4.6l-6.5 6.5a2 2 0 0 0 0 2.8l5.5 5.5a2 2 0 0 0 2.8 0l6.5-6.5a2 2 0 0 0 .6-1.4Z"/></svg>
+          <p>Zatím žádné kategorie.</p>
+          <p class="empty-hint">Přidej první tlačítkem „+“ vpravo dole.</p>
+        </div>
+      </section>
+
+      <!-- ============ SEKCE: DETAIL KATEGORIE ============ -->
+      <section id="view-category-detail" class="view">
+        <div class="detail-header">
+          <button class="icon-btn" id="category-detail-back" aria-label="Zpět">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2 id="category-detail-title">Kategorie</h2>
+          <button class="icon-btn icon-btn-danger" id="category-detail-delete" aria-label="Smazat kategorii">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m2 0-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7"/></svg>
+          </button>
+        </div>
+
+        <ul class="task-list" id="category-detail-task-list"></ul>
+        <div class="empty-state hidden" id="category-detail-empty">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+          <p>V této kategorii zatím nejsou žádné úkoly.</p>
+        </div>
+      </section>
+
+      <!-- ============ SEKCE: KALENDÁŘ ============ -->
+      <section id="view-calendar" class="view">
+        <div class="calendar-header">
+          <button class="icon-btn" id="cal-prev" aria-label="Předchozí měsíc">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2 id="cal-month-label">Měsíc</h2>
+          <button class="icon-btn" id="cal-next" aria-label="Další měsíc">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
+        <div class="calendar-weekdays">
+          <span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
+
+        <div class="calendar-day-panel">
+          <h3 id="calendar-day-title">Dnes</h3>
+          <ul class="task-list" id="calendar-day-task-list"></ul>
+          <p class="empty-state-inline hidden" id="calendar-day-empty">Žádné úkoly na tento den.</p>
+        </div>
+      </section>
+
+      <!-- ============ SEKCE: NASTAVENÍ ============ -->
+      <section id="view-settings" class="view">
+        <div class="card">
           <div class="field">
-            <label for="task-title">Název úkolu</label>
-            <input type="text" id="task-title" required autocomplete="off" />
+            <label for="server-url">Adresa ESP32 (jen pro nainstalovanou appku mimo domácí síť)</label>
+            <input type="text" id="server-url" placeholder="např. http://ukoly.local nebo http://192.168.1.50" autocomplete="off" />
           </div>
+          <button type="button" class="btn btn-secondary" id="save-server-url">Uložit adresu</button>
+        </div>
 
-          <div class="field-row">
-            <div class="field">
-              <label for="task-priority">Priorita</label>
-              <select id="task-priority">
-                <option value="nizka">Nízká</option>
-                <option value="stredni" selected>Střední</option>
-                <option value="vysoka">Vysoká</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="task-deadline">Termín</label>
-              <input type="date" id="task-deadline" />
-            </div>
+        <div class="card">
+          <div class="settings-row">
+            <span>Naposledy synchronizováno</span>
+            <span id="last-sync-value">nikdy</span>
           </div>
+          <div class="settings-row">
+            <span>Stav</span>
+            <span id="sync-status-value">–</span>
+          </div>
+        </div>
 
+        <button type="button" class="btn" id="sync-now-btn">Synchronizovat teď</button>
+      </section>
+    </main>
+
+    <button class="fab" id="fab-add" type="button" aria-label="Přidat">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+
+  <!-- ============ MODAL: Přidat/upravit úkol ============ -->
+  <div class="modal-overlay" id="task-modal-overlay" hidden>
+    <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <div class="modal-handle" aria-hidden="true"></div>
+      <div class="modal-header">
+        <h2 id="task-modal-title">Přidat úkol</h2>
+        <button class="icon-btn" id="task-modal-close" aria-label="Zavřít">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <form id="task-form" class="modal-body">
+        <div class="field">
+          <label for="task-title">Název úkolu</label>
+          <input type="text" id="task-title" required autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label for="task-description">Poznámka (nepovinné)</label>
+          <textarea id="task-description" rows="2"></textarea>
+        </div>
+
+        <div class="field-row">
           <div class="field">
-            <label for="task-category">Kategorie</label>
-            <select id="task-category">
-              <option value="">Nezařazeno</option>
-              <option value="__new__">+ nová kategorie…</option>
+            <label for="task-priority">Priorita</label>
+            <select id="task-priority">
+              <option value="nizka">Nízká</option>
+              <option value="stredni" selected>Střední</option>
+              <option value="vysoka">Vysoká</option>
             </select>
           </div>
-
-          <div class="field hidden" id="new-category-field">
-            <label for="task-new-category-name">Název nové kategorie</label>
-            <input type="text" id="task-new-category-name" autocomplete="off" />
-          </div>
-
-          <button type="submit" class="btn">Přidat úkol</button>
-        </form>
-      </div>
-
-      <ul class="task-list" id="task-list"></ul>
-      <p class="empty-state hidden" id="task-list-empty">Zatím žádné úkoly.</p>
-    </section>
-
-    <!-- ============ SEKCE: KATEGORIE (seznam) ============ -->
-    <section id="view-categories" class="view">
-      <div class="card">
-        <form id="category-form">
           <div class="field">
-            <label for="new-category-name">Nová kategorie</label>
-            <input type="text" id="new-category-name" autocomplete="off" />
+            <label for="task-deadline">Termín</label>
+            <input type="date" id="task-deadline" />
           </div>
-          <button type="submit" class="btn">Založit kategorii</button>
-        </form>
+        </div>
+
+        <div class="field" id="task-category-field">
+          <label for="task-category">Kategorie</label>
+          <select id="task-category">
+            <option value="">Nezařazeno</option>
+            <option value="__new__">+ nová kategorie…</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="new-category-field">
+          <label for="task-new-category-name">Název nové kategorie</label>
+          <input type="text" id="task-new-category-name" autocomplete="off" />
+        </div>
+
+        <button type="submit" class="btn">Přidat úkol</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: Nová kategorie ============ -->
+  <div class="modal-overlay" id="category-modal-overlay" hidden>
+    <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="category-modal-title">
+      <div class="modal-handle" aria-hidden="true"></div>
+      <div class="modal-header">
+        <h2 id="category-modal-title">Nová kategorie</h2>
+        <button class="icon-btn" id="category-modal-close" aria-label="Zavřít">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
-
-      <ul class="category-list" id="category-list"></ul>
-      <p class="empty-state hidden" id="category-list-empty">Zatím žádné kategorie.</p>
-    </section>
-
-    <!-- ============ SEKCE: DETAIL KATEGORIE ============ -->
-    <section id="view-category-detail" class="view">
-      <div class="category-detail-header">
-        <button class="back-btn" id="category-detail-back" aria-label="Zpět">←</button>
-        <h2 id="category-detail-title">Kategorie</h2>
-      </div>
-
-      <div class="card">
-        <form id="category-task-form">
-          <div class="field">
-            <label for="cat-task-title">Název úkolu</label>
-            <input type="text" id="cat-task-title" required autocomplete="off" />
-          </div>
-
-          <div class="field-row">
-            <div class="field">
-              <label for="cat-task-priority">Priorita</label>
-              <select id="cat-task-priority">
-                <option value="nizka">Nízká</option>
-                <option value="stredni" selected>Střední</option>
-                <option value="vysoka">Vysoká</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="cat-task-deadline">Termín</label>
-              <input type="date" id="cat-task-deadline" />
-            </div>
-          </div>
-
-          <button type="submit" class="btn">Přidat úkol</button>
-        </form>
-      </div>
-
-      <ul class="task-list" id="category-detail-task-list"></ul>
-      <p class="empty-state hidden" id="category-detail-empty">V této kategorii zatím nejsou žádné úkoly.</p>
-    </section>
-
-    <!-- ============ SEKCE: NASTAVENÍ ============ -->
-    <section id="view-settings" class="view">
-      <div class="card">
+      <form id="category-form" class="modal-body">
         <div class="field">
-          <label for="server-url">Adresa ESP32 (jen pro nainstalovanou appku mimo domácí síť)</label>
-          <input type="text" id="server-url" placeholder="např. http://ukoly.local nebo http://192.168.1.50" autocomplete="off" />
+          <label for="new-category-name">Název kategorie</label>
+          <input type="text" id="new-category-name" autocomplete="off" required />
         </div>
-        <button type="button" class="btn btn-secondary" id="save-server-url">Uložit adresu</button>
-      </div>
-
-      <div class="card">
-        <div class="settings-row">
-          <span>Naposledy synchronizováno</span>
-          <span id="last-sync-value">nikdy</span>
-        </div>
-        <div class="settings-row">
-          <span>Stav</span>
-          <span id="sync-status-value">–</span>
-        </div>
-      </div>
-
-      <button type="button" class="btn" id="sync-now-btn">Synchronizovat teď</button>
-    </section>
-  </main>
-
-  <nav class="bottom-nav">
-    <button data-view="tasks" class="nav-btn active">
-      <span class="icon">☑</span>
-      <span>Úkoly</span>
-    </button>
-    <button data-view="categories" class="nav-btn">
-      <span class="icon">▤</span>
-      <span>Kategorie</span>
-    </button>
-    <button data-view="settings" class="nav-btn">
-      <span class="icon">⚙</span>
-      <span>Nastavení</span>
-    </button>
-  </nav>
+        <button type="submit" class="btn">Založit kategorii</button>
+      </form>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>

@@ -101,15 +101,35 @@ ArduinoJson v7 — používej `JsonDocument` (dynamický), nikdy
 
 Jeden IIFE soubor bez modulů/importů. Sekce v pořadí: localStorage
 helpers → in-memory `state` (`tasks`, `categories`) → navigace mezi views
-(`switchView`) → render funkce (`renderTasks`, `renderCategories`,
-`renderCategoryDetail`, `renderSettings`) → CRUD operace nad `state` (vždy
-hned zapisují do localStorage přes `persistTasks`/`persistCategories` a pak
-ručně volají odpovídající render) → sync (`attemptSync`, `mergeCollections`,
-`runSync`) → registrace service workera → start (počáteční render + `runSync`).
+(`switchView`, řídí i viditelnost FAB přes `updateFabVisibility`) → render
+funkce (`renderTasks`, `renderCategories`, `renderCategoryDetail`,
+`renderCalendar`, `renderSettings`) → modály (`openTaskModal`/
+`openCategoryModal` + jejich `close*`) → CRUD operace nad `state` (vždy
+hned zapisují do localStorage přes `persistTasks`/`persistCategories`
+a pak ručně volají odpovídající render) → indikátor
+synchronizace (`computeSyncStatus`/`renderSyncIndicator`) → sync
+(`attemptSync`, `mergeCollections`, `runSync`) → registrace service workera
+→ start (počáteční render + `runSync`).
 
-Tři views v `index.html`/`style.css`: Úkoly (`#view-tasks`), Kategorie
-(`#view-categories` seznam → `#view-category-detail` detail), Nastavení
-(`#view-settings`). Přepínání je čistě přes CSS třídu `active`, bez reloadu.
+Pět views v `index.html`/`style.css`: Úkoly (`#view-tasks`), Kategorie
+(`#view-categories` seznam → `#view-category-detail` detail), Kalendář
+(`#view-calendar`), Nastavení (`#view-settings`). Přepínání je čistě přes
+CSS třídu `active`, bez reloadu. Přidávání úkolů/kategorií jde jen přes FAB
+(`#fab-add`, kontextové podle `currentView`) + modál (bottom-sheet na
+mobilu, vycentrované okno na desktopu přes media query `min-width: 860px`)
+— žádné inline formuláře ve views.
+
+**Past bug (pozor při dalších modálech/overlayích):** `.modal-overlay` má
+`display: flex` v CSS a JS přepíná viditelnost přes DOM atribut `hidden`
+(`overlay.hidden = true/false`) — bez explicitního `.modal-overlay[hidden]
+{ display: none; }` by `display: flex` z třídy přebilo UA styl `[hidden]`
+a modál by zůstal vidět i se staveným atributem. Stejný vzor (třída s
+vlastním `display` + `[hidden]` override) dodržuj u každého nového overlaye.
+
+Mazání kategorie (`deleteCategory` v `data/app.js` + `POST
+/api/categories/delete?id=X` v `src/main.cpp`) je měkké — úkoly v kategorii
+zůstávají, jen `categoryName()` pro smazanou kategorii vrací "Nezařazeno".
+Kategorie se needituje (žádný rename endpoint/UI), jen vytváří a maže.
 
 `sw.js` cachuje jen shell appky (cache-first) a explicitně ignoruje všechny
 `/api/*` požadavky — ty appka řeší sama přes `fetch` s timeoutem, ne přes

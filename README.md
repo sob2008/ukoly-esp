@@ -83,6 +83,27 @@ Appku lze úplně stejně jen otevřít v libovolném prohlížeči na `http://u
 (nebo na IP adrese zařízení) bez jakékoliv instalace – funguje to stejně, jen
 bez možnosti offline provozu mimo domácí síť.
 
+## Rozhraní appky
+
+Appka je plně responzivní – na mobilu spodní navigace + plovoucí tlačítko
+„+“ vpravo dole, na širší obrazovce (PC/tablet) se navigace přesune do
+levého panelu. Čtyři sekce:
+
+- **Úkoly** – jen seznam (přidávání přes „+“, otevře formulář jako spodní
+  „sheet“ na mobilu / vycentrované okno na PC).
+- **Kategorie** – seznam kategorií s počtem nedokončených úkolů; kliknutím
+  na kategorii detail s jejími úkoly a možností kategorii smazat (úkoly v ní
+  zůstanou, jen se přeřadí na „Nezařazeno“ – kategorie samotné se nedají
+  editovat, jen vytvořit/smazat).
+- **Kalendář** – měsíční přehled, dny s úkoly mají tečku barvenou podle
+  nejvyšší priority daného dne; kliknutím na den se dole zobrazí jeho úkoly.
+- **Nastavení** – adresa ESP32 pro ruční sync a stav synchronizace.
+
+Vpravo nahoře je tečka indikující stav synchronizace (klik na ni otevře
+Nastavení): **zelená** = přímo na zařízení, nebo nedávno synchronizováno;
+**žlutá** = synchronizováno, ale ne v poslední hodině; **červená** = víc
+než den bez synchronizace (nebo nikdy).
+
 ## Jak funguje synchronizace
 
 - Appka vždy čte a zobrazuje data z `localStorage` v telefonu/PC – to je zdroj
