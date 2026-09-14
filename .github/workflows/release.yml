@@ -1,0 +1,102 @@
+name: Build and release firmware
+
+# Spousti se VYHRADNE rucnim vytvorenim a pushnutim tagu ve tvaru vX.Y.Z,
+# napr.:
+#   git tag v1.2.0
+#   git push origin v1.2.0
+# Zadny automaticky build pri beznem push do main. To je zakladni
+# bezpecnostni vlastnost OTA systemu (viz README.md, sekce "OTA aktualizace") -
+# nikdy se nesmi vydat release bez vedomeho rozhodnuti.
+#
+# Workflow zkompiluje firmware pres PlatformIO, overi, ze FIRMWARE_VERSION
+# v src/OtaConfig.h odpovida pushnutemu tagu, vytvori firmware.bin,
+# firmware.json a firmware.bin.sha256 a nahraje je jako assety do GitHub
+# Release se stejnym tagem. Format assetu presne odpovida tomu, co ocekava
+# OtaManager (viz src/OtaManager.cpp, fetchLatestRelease/fetchMetadata).
+#
+# Adaptovano z https://github.com/sob2008/esp-ota (workflows/release.yml.template),
+# ktery pocita s arduino-cli - tento projekt pouziva PlatformIO, takze
+# kompilace i cesta k vystupnimu .bin jsou tomu prizpusobene.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Read FIRMWARE_VERSION / FIRMWARE_TARGET from src/OtaConfig.h
+        id: fw
+        run: |
+          set -e
+          CONFIG="src/OtaConfig.h"
+          FW_VERSION=$(sed -n 's/^#define FIRMWARE_VERSION "\(.*\)"/\1/p' "$CONFIG")
+          FW_TARGET=$(sed -n 's/^#define FIRMWARE_TARGET "\(.*\)"/\1/p' "$CONFIG")
+          if [ -z "$FW_VERSION" ] || [ -z "$FW_TARGET" ]; then
+            echo "::error::Nepodarilo se precist FIRMWARE_VERSION/FIRMWARE_TARGET z $CONFIG"
+            exit 1
+          fi
+          echo "version=$FW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "target=$FW_TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches FIRMWARE_VERSION
+        run: |
+          set -e
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "${{ steps.fw.outputs.version }}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (verze $TAG_VERSION) neodpovida FIRMWARE_VERSION v src/OtaConfig.h (${{ steps.fw.outputs.version }}). Uprav FIRMWARE_VERSION a vytvor tag znovu."
+            exit 1
+          fi
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+
+      - name: Prepare release assets
+        run: |
+          set -e
+          mkdir -p release
+          cp .pio/build/esp32dev/firmware.bin release/firmware.bin
+
+          SIZE=$(stat -c%s release/firmware.bin)
+          SHA256=$(sha256sum release/firmware.bin | cut -d' ' -f1)
+
+          echo "$SHA256  firmware.bin" > release/firmware.bin.sha256
+
+          cat > release/firmware.json <<EOF
+          {
+            "version": "${{ steps.fw.outputs.version }}",
+            "target": "${{ steps.fw.outputs.target }}",
+            "firmware_size": $SIZE,
+            "sha256": "$SHA256"
+          }
+          EOF
+
+          echo "Firmware: $SIZE bajtu, sha256=$SHA256"
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release create "${GITHUB_REF_NAME}" \
+            release/firmware.bin \
+            release/firmware.json \
+            release/firmware.bin.sha256 \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

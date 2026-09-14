@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Úkolovník</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <meta name="theme-color" content="#12151a" />
+
+  <!-- iOS PWA meta tagy -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Úkolovník" />
+
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Úkolovník</h1>
+  </header>
+
+  <main>
+    <!-- ============ SEKCE: ÚKOLY ============ -->
+    <section id="view-tasks" class="view active">
+      <div class="card">
+        <form id="task-form">
+          <div class="field">
+            <label for="task-title">Název úkolu</label>
+            <input type="text" id="task-title" required autocomplete="off" />
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="task-priority">Priorita</label>
+              <select id="task-priority">
+                <option value="nizka">Nízká</option>
+                <option value="stredni" selected>Střední</option>
+                <option value="vysoka">Vysoká</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="task-deadline">Termín</label>
+              <input type="date" id="task-deadline" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="task-category">Kategorie</label>
+            <select id="task-category">
+              <option value="">Nezařazeno</option>
+              <option value="__new__">+ nová kategorie…</option>
+            </select>
+          </div>
+
+          <div class="field hidden" id="new-category-field">
+            <label for="task-new-category-name">Název nové kategorie</label>
+            <input type="text" id="task-new-category-name" autocomplete="off" />
+          </div>
+
+          <button type="submit" class="btn">Přidat úkol</button>
+        </form>
+      </div>
+
+      <ul class="task-list" id="task-list"></ul>
+      <p class="empty-state hidden" id="task-list-empty">Zatím žádné úkoly.</p>
+    </section>
+
+    <!-- ============ SEKCE: KATEGORIE (seznam) ============ -->
+    <section id="view-categories" class="view">
+      <div class="card">
+        <form id="category-form">
+          <div class="field">
+            <label for="new-category-name">Nová kategorie</label>
+            <input type="text" id="new-category-name" autocomplete="off" />
+          </div>
+          <button type="submit" class="btn">Založit kategorii</button>
+        </form>
+      </div>
+
+      <ul class="category-list" id="category-list"></ul>
+      <p class="empty-state hidden" id="category-list-empty">Zatím žádné kategorie.</p>
+    </section>
+
+    <!-- ============ SEKCE: DETAIL KATEGORIE ============ -->
+    <section id="view-category-detail" class="view">
+      <div class="category-detail-header">
+        <button class="back-btn" id="category-detail-back" aria-label="Zpět">←</button>
+        <h2 id="category-detail-title">Kategorie</h2>
+      </div>
+
+      <div class="card">
+        <form id="category-task-form">
+          <div class="field">
+            <label for="cat-task-title">Název úkolu</label>
+            <input type="text" id="cat-task-title" required autocomplete="off" />
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="cat-task-priority">Priorita</label>
+              <select id="cat-task-priority">
+                <option value="nizka">Nízká</option>
+                <option value="stredni" selected>Střední</option>
+                <option value="vysoka">Vysoká</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="cat-task-deadline">Termín</label>
+              <input type="date" id="cat-task-deadline" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn">Přidat úkol</button>
+        </form>
+      </div>
+
+      <ul class="task-list" id="category-detail-task-list"></ul>
+      <p class="empty-state hidden" id="category-detail-empty">V této kategorii zatím nejsou žádné úkoly.</p>
+    </section>
+
+    <!-- ============ SEKCE: NASTAVENÍ ============ -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <div class="field">
+          <label for="server-url">Adresa ESP32 (jen pro nainstalovanou appku mimo domácí síť)</label>
+          <input type="text" id="server-url" placeholder="např. http://ukoly.local nebo http://192.168.1.50" autocomplete="off" />
+        </div>
+        <button type="button" class="btn btn-secondary" id="save-server-url">Uložit adresu</button>
+      </div>
+
+      <div class="card">
+        <div class="settings-row">
+          <span>Naposledy synchronizováno</span>
+          <span id="last-sync-value">nikdy</span>
+        </div>
+        <div class="settings-row">
+          <span>Stav</span>
+          <span id="sync-status-value">–</span>
+        </div>
+      </div>
+
+      <button type="button" class="btn" id="sync-now-btn">Synchronizovat teď</button>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <button data-view="tasks" class="nav-btn active">
+      <span class="icon">☑</span>
+      <span>Úkoly</span>
+    </button>
+    <button data-view="categories" class="nav-btn">
+      <span class="icon">▤</span>
+      <span>Kategorie</span>
+    </button>
+    <button data-view="settings" class="nav-btn">
+      <span class="icon">⚙</span>
+      <span>Nastavení</span>
+    </button>
+  </nav>
+
+  <script src="/app.js"></script>
+</body>
+</html>

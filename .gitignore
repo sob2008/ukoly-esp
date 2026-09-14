@@ -1,0 +1,4 @@
+.pio/
+.vscode/
+test_host/*.exe
+test_host/*.o
