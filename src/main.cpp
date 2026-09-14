@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiManager.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncJson.h>
 #include <ArduinoJson.h>
@@ -17,10 +18,9 @@
 // ============================================================
 // KONFIGURACE – uprav podle vlastní sítě a desky
 // ============================================================
-const char *WIFI_SSID = "TVOJE_WIFI_SSID";
-const char *WIFI_PASSWORD = "TVOJE_WIFI_HESLO";
-const char *MDNS_NAME = "ukoly";       // zařízení dostupné jako http://ukoly.local
-const int STATUS_LED = 2;              // uprav podle konkrétní desky
+const char *WIFI_SETUP_AP_NAME = "Ukoly_Setup"; // WiFi sit pro prvni nastaveni (captive portal)
+const char *MDNS_NAME = "ukoly";                // zařízení dostupné jako http://ukoly.local
+const int STATUS_LED = 2;                       // uprav podle konkrétní desky
 
 // NTP / časová zóna Praha (CET/CEST, automatický letní čas)
 const char *NTP_SERVER = "pool.ntp.org";
@@ -452,21 +452,26 @@ void setup()
     OtaState::begin();
     OtaManager::begin();
 
-    // --- WiFi ---
+    // --- WiFi (WiFiManager) ---
+    // autoConnect() nejdriv zkusi prihlasovaci udaje, ktere ESP32 samo
+    // persistuje v NVS z posledniho uspesneho pripojeni - stejny mechanismus
+    // pouziva i tovarni firmware (factory-ukoly-esp32/), takze WiFi zadana
+    // tam pres jeho portal funguje i tady beze zmeny kodu. Pokud se
+    // nepripoji (zadne ulozene udaje / spatne heslo / sit nedostupna),
+    // otevre blokujici captive portal (sit WIFI_SETUP_AP_NAME, 192.168.4.1)
+    // az do setConfigPortalTimeout() - po jeho vyprseni pokracuje dal bez
+    // WiFi, LED zustane pomalu blikat.
     ledMode = LED_SLOW_BLINK;
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    Serial.print("Pripojuji k WiFi");
-    unsigned long wifiStart = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000)
-    {
-        updateLed();
-        delay(50);
-        Serial.print(".");
-    }
-    Serial.println();
+    WiFiManager wm;
+    wm.setAPCallback([](WiFiManager *) {
+        // Odlisny stav od LED_SOLID (pripojeno) i LED_SLOW_BLINK (WiFi
+        // spadla) - LED zhasnuta = ceka se na rucni nastaveni pres portal.
+        digitalWrite(STATUS_LED, LOW);
+    });
+    wm.setConfigPortalTimeout(180);
+    Serial.println("Pripojuji k WiFi (ulozene udaje, jinak portal '" + String(WIFI_SETUP_AP_NAME) + "' na 192.168.4.1)...");
 
-    if (WiFi.status() == WL_CONNECTED)
+    if (wm.autoConnect(WIFI_SETUP_AP_NAME))
     {
         Serial.print("WiFi pripojeno, IP: ");
         Serial.println(WiFi.localIP());
@@ -474,7 +479,7 @@ void setup()
     }
     else
     {
-        Serial.println("WiFi se nepodarilo pripojit, pokracuji (LED pomalu bliká).");
+        Serial.println("WiFi se nepodarilo pripojit (portal vyprsel), pokracuji (LED pomalu bliká).");
         ledMode = LED_SLOW_BLINK;
     }
 

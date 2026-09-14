@@ -7,11 +7,13 @@ PWA, aby fungoval i offline mimo domov.
 
 ## Konfigurace před nahráním
 
-V souboru [`src/main.cpp`](src/main.cpp) na začátku uprav konstanty:
+WiFi se nezadává do kódu – zařízení se konfiguruje přes captive portal
+([WiFiManager](https://github.com/tzapu/WiFiManager)), viz "První připojení
+k WiFi" níže. V souboru [`src/main.cpp`](src/main.cpp) lze podle potřeby
+upravit jen:
 
 ```cpp
-const char *WIFI_SSID = "TVOJE_WIFI_SSID";
-const char *WIFI_PASSWORD = "TVOJE_WIFI_HESLO";
+const char *WIFI_SETUP_AP_NAME = "Ukoly_Setup"; // název sítě pro první nastavení
 const char *MDNS_NAME = "ukoly";   // zařízení bude dostupné jako http://ukoly.local
 const int STATUS_LED = 2;          // uprav podle konkrétní desky, pokud GPIO2 nesedí
 ```
@@ -30,6 +32,23 @@ pio run --target upload
 
 Pořadí není striktně nutné, ale doporučuje se nejdřív nahrát souborový systém.
 
+## První připojení k WiFi
+
+Po prvním nahrání (nebo kdykoliv zařízení nemá uložené funkční WiFi) vytvoří
+síť **`Ukoly_Setup`**:
+
+1. Připoj se na ni telefonem/PC.
+2. V prohlížeči se buď sama otevře portál, nebo jdi na `192.168.4.1`.
+3. Vyber domácí WiFi síť a zadej heslo.
+
+Zařízení se pak připojí a přihlašovací údaje si uloží (persistují v NVS na
+flash, přežijí restart i OTA aktualizaci firmware). Portál čeká 180 sekund –
+pokud vyprší, zařízení pokračuje bez WiFi (LED viz níže) a při dalším
+restartu to zkusí znovu.
+
+Stejný mechanismus používá i [tovární firmware](factory-ukoly-esp32/) –
+WiFi zadaná přes jeho portál funguje i pro ostrý firmware bez dalšího zásahu.
+
 ## Jak zařízení najít v síti
 
 - `http://ukoly.local` (díky mDNS – funguje ve většině domácích sítí a na
@@ -41,7 +60,8 @@ Pořadí není striktně nutné, ale doporučuje se nejdřív nahrát souborový
 ## Stavová LED
 
 - **trvale svítí** – WiFi je připojeno a server běží
-- **pomalu bliká (500 ms)** – WiFi spadlo
+- **zhasnutá** – čeká se na nastavení WiFi přes portál `Ukoly_Setup` (viz výše)
+- **pomalu bliká (500 ms)** – WiFi spadlo / portál vypršel bez nastavení
 - **rychle bliká donekonečna** – nepodařilo se připojit LittleFS (kritická chyba)
 
 ## Přidání appky na plochu telefonu

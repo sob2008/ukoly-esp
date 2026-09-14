@@ -25,12 +25,13 @@ publikovaný Release (viz `../README.md`, sekce "OTA aktualizace" –
 `scripts/release.ps1`), jinak tovární firmware jen donekonečna zkouší a nic
 nenajde.
 
-**Důležité:** ostrý firmware (`../src/main.cpp`) má WiFi SSID/heslo pevně
-zadrátované v kódu (`WIFI_SSID`/`WIFI_PASSWORD`), ne přes WiFiManager. WiFi,
-kterou zadáš do portálu tady, slouží jen k tomu, aby si TOHLE tovární
-firmware mohlo stáhnout release – aby se po restartu připojil i ostrý
-firmware, musí mít build, který si stáhne, ve `WIFI_SSID`/`WIFI_PASSWORD`
-už při kompilaci nastavenou tvoji síť.
+**WiFi se propíše i do ostrého firmware:** ostrý firmware (`../src/main.cpp`)
+teď taky používá WiFiManager. Přihlašovací údaje, které zadáš do portálu
+tady, si ESP32 ukládá v NVS na flash (mimo `app0`/`app1` OTA partition, OTA
+se jí nedotkne) – po restartu do staženého ostrého firmware se tedy připojí
+na stejnou síť automaticky, bez dalšího portálu. Pokud by se výjimečně
+nepřipojil (jiná WiFi, změněné heslo), otevře si vlastní portál `Ukoly_Setup`
+(viz `../README.md`, sekce "První připojení k WiFi").
 
 ## Sestavení a nahrání
 

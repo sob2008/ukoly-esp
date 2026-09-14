@@ -91,9 +91,17 @@ konfigurační konstanty → pomocné funkce nad JSON soubory (`loadJsonArray`/
 `saveJsonArray` pracují vždy s celým polem najednou, žádná stránkovaná
 persistence) → stavová LED (neblokující, řízená v `loop()` přes `millis()`) →
 `setupRoutes()` registruje všechny REST endpointy → `setup()` postupně:
-LittleFS mount (kritická chyba = rychlé blikání LED navždy) → WiFi connect →
-NTP (`configTzTime` s časovou zónou Prahy) → mDNS → počáteční purge → routy →
-`server.serveStatic("/", ...)` s `index.html` jako default file.
+LittleFS mount (kritická chyba = rychlé blikání LED navždy) → OTA state/begin
+→ WiFi (`WiFiManager::autoConnect()` — zkusí v NVS uložené údaje, jinak
+blokující captive portal `Ukoly_Setup`, viz `README.md` "První připojení
+k WiFi") → NTP (`configTzTime` s časovou zónou Prahy) → mDNS → počáteční
+purge → routy → `server.serveStatic("/", ...)` s `index.html` jako default
+file → `server.begin()` → `OtaManager::notifyApplicationHealthy()`.
+
+Flash je po přidání OTA + WiFiManager na **91.6 %** (1 200 193 / 1 310 720 B
+v OTA app partition) — málo rezervy pro další růst; nová funkčnost do
+firmware by se měla ověřovat reálnou kompilací (`pio run`) a sledovat
+hlášenou velikost.
 
 Všechny POST endpointy s JSON tělem (`/api/categories`, `/api/tasks`,
 `/api/tasks/update`) jsou registrované přes `AsyncCallbackJsonWebHandler`
@@ -159,9 +167,12 @@ cross-projektový `#include` není možný, proto má vlastní kopie
 `Ota*.{h,cpp}` (identické s `src/`) a vlastní `OtaConfig.h`
 (`FIRMWARE_VERSION "0.0.0"`, krátký `OTA_CHECK_INTERVAL_MS` — jinak identická
 `FIRMWARE_TARGET`/`GITHUB_OWNER`/`GITHUB_REPOSITORY`, musí zůstat v souladu
-s `src/OtaConfig.h`). Nahrazuje `WIFI_SSID`/`WIFI_PASSWORD` konstanty
-WiFiManager captive portálem (`tzapu/WiFiManager`) — po připojení rovnou
-stáhne a nainstaluje nejnovější GitHub Release stejným OTA klientem a
+s `src/OtaConfig.h`). Připojuje WiFi přes stejný `WiFiManager` captive portal
+(`tzapu/WiFiManager`) jako `src/main.cpp`, jen s jiným AP názvem
+(`Ukoly_Provisioning` vs `Ukoly_Setup`) — přihlašovací údaje persistuje ESP32
+samo v NVS nezávisle na tom, který firmware zrovna běží, takže WiFi zadaná
+tady funguje beze změny i po přeinstalování na ostrý firmware. Po připojení
+rovnou stáhne a nainstaluje nejnovější GitHub Release stejným OTA klientem a
 restartuje se do něj; sám sebe už nikdy znovu nespustí. `!flash/` je
 univerzální flash skript z `sob2008/esp-ota` (needituj ho) — očekává Arduino
 IDE pojmenování (`*.ino.bin`), takže PlatformIO výstup je před použitím
