@@ -1,9 +1,9 @@
 # ukoly-esp32
 
-Lokální webový úkolovník běžící přímo na ESP32, čistě na domácí WiFi – bez
-cloudu a bez závislosti na internetu. Přístupný z libovolného zařízení v síti
-(telefon, PC, tablet) přes prohlížeč, a navíc instalovatelný na telefonu jako
-PWA, aby fungoval i offline mimo domov.
+Lokální správce projektů/úkolů/poznámek/nápadů běžící přímo na ESP32, čistě
+na domácí WiFi – bez cloudu a bez závislosti na internetu. Přístupný
+z libovolného zařízení v síti (telefon, PC, tablet) přes prohlížeč, a navíc
+instalovatelný na telefonu na plochu jako appka.
 
 ## Konfigurace před nahráním
 
@@ -32,6 +32,16 @@ pio run --target upload
 
 Pořadí není striktně nutné, ale doporučuje se nejdřív nahrát souborový systém.
 Obojí je potřeba nahrát vždy přes USB – zařízení se samo neaktualizuje.
+
+**Uložené úkoly/projekty/poznámky přitom zůstanou netknuté** – žijí na
+samostatné flash partition `userdata`, oddělené od partition se statickými
+soubory appky (`data/`), kterou `uploadfs` přepisuje. Viz `partitions.csv`
+a sekce "Architektura ukládání dat" níže.
+
+Jediná výjimka je změna `partitions.csv` samotného (rozložení flash) – to
+vyžaduje kompletní `erase_flash` a nové nahrání všeho od nuly, včetně ztráty
+uložených dat i WiFi hesla. Za normálního vývoje (úpravy `src/main.cpp` nebo
+`data/`) k tomu nedochází.
 
 ## První připojení k WiFi
 
@@ -63,46 +73,87 @@ pokračuje bez WiFi (LED viz níže) a při dalším restartu to zkusí znovu.
 
 ## Přidání appky na plochu telefonu
 
-Appka je instalovatelná jako PWA. Při **první instalaci musí být telefon
-připojený k WiFi a otevřít appku přímo na ESP32** (např. `http://ukoly.local`),
-aby si service worker stihl nacachovat shell appky pro pozdější offline provoz.
+Appka jde přidat na plochu telefonu (funguje jako appka na celou obrazovku,
+bez adresního řádku prohlížeče).
 
 **iPhone (Safari):**
-1. Otevři `http://ukoly.local` v Safari.
+1. Otevři `http://ukoly.local` v Safari (musíš být na domácí WiFi).
 2. Ťukni na ikonu Sdílet.
 3. Zvol „Přidat na plochu“.
 
 **Android (Chrome):**
-1. Otevři `http://ukoly.local` v Chrome.
+1. Otevři `http://ukoly.local` v Chrome (musíš být na domácí WiFi).
 2. Otevři nabídku (tři tečky).
 3. Zvol „Přidat na plochu“ / „Nainstalovat aplikaci“.
+
+**Důležité omezení – appka NEFUNGUJE offline od "studeného startu":**
+appka běží na obyčejném HTTP (`http://ukoly.local`), ne HTTPS. Prohlížeče
+(Chrome, Safari) z bezpečnostních důvodů dovolují service workery (a tedy
+stránkové cachování pro offline použití) jen na HTTPS nebo `localhost` – na
+`http://ukoly.local` to technicky nejde. V praxi to znamená:
+- Appka funguje offline, **dokud zůstává běžet na pozadí** telefonu (čte si
+  vlastní data z `localStorage`, síť k tomu nepotřebuje).
+- Pokud appku úplně zavřeš/vypneš telefon a spustíš ji znovu **mimo domácí
+  WiFi**, zobrazí se prázdná/chybová stránka – prohlížeč se musí nejdřív
+  spojit se zařízením, aby appku vůbec stáhnul.
+- Přidání HTTPS na ESP32 by tohle vyřešilo, ale je to zásadní zásah
+  (vlastní certifikát, který by sis musel ručně nainstalovat a "vyzdvihnout"
+  jako důvěryhodný na každém telefonu) – zatím se nedělalo, appka se
+  primárně používá doma na WiFi.
 
 ## Otevření v prohlížeči na PC bez instalace
 
 Appku lze úplně stejně jen otevřít v libovolném prohlížeči na `http://ukoly.local`
-(nebo na IP adrese zařízení) bez jakékoliv instalace – funguje to stejně, jen
-bez možnosti offline provozu mimo domácí síť.
+(nebo na IP adrese zařízení) bez jakékoliv instalace.
 
 ## Rozhraní appky
 
 Appka je plně responzivní – na mobilu spodní navigace + plovoucí tlačítko
 „+“ vpravo dole, na širší obrazovce (PC/tablet) se navigace přesune do
-levého panelu. Čtyři sekce:
+levého panelu. Pět sekcí:
 
-- **Úkoly** – jen seznam (přidávání přes „+“, otevře formulář jako spodní
-  „sheet“ na mobilu / vycentrované okno na PC).
-- **Kategorie** – seznam kategorií s počtem nedokončených úkolů; kliknutím
-  na kategorii detail s jejími úkoly a možností kategorii smazat (úkoly v ní
-  zůstanou, jen se přeřadí na „Nezařazeno“ – kategorie samotné se nedají
-  editovat, jen vytvořit/smazat).
+- **Úkoly** – plochý přehled VŠECH nesplněných/splněných úkolů napříč
+  projekty i nápady, seřazený podle priority a termínu. Rychlý pohled na to,
+  co je potřeba udělat, bez nutnosti procházet jednotlivé projekty.
+- **Projekty** – seznam projektů (např. "Zahrada", "Rekonstrukce koupelny").
+  Kliknutím na projekt detail se dvěma taby:
+  - **Úkoly** – checklist položek k udělání v rámci projektu.
+  - **Poznámky** – volné textové poznámky/nápady k projektu (bez termínu
+    a checkboxu, jen text + čas přidání).
+
+  V detailu jde projekt tlačítkem s ikonou koše smazat (úkoly v něm zůstanou,
+  jen se přeřadí na „Nezařazeno“). Projekty se needitují (nejde přejmenovat),
+  jen vytvářejí a mažou.
+- **Nápady** – strukturně úplně stejné jako Projekty (vlastní seznam, každý
+  nápad má svoje úkoly i poznámky) – jen oddělená kategorie pro věci, které
+  ještě nejsou plnohodnotný projekt.
 - **Kalendář** – měsíční přehled, dny s úkoly mají tečku barvenou podle
   nejvyšší priority daného dne; kliknutím na den se dole zobrazí jeho úkoly.
 - **Nastavení** – adresa ESP32 pro ruční sync a stav synchronizace.
+
+Tlačítko „+“ (FAB, vpravo dole) je kontextové podle toho, kde zrovna jsi:
+na Úkolech/Kalendáři přidá úkol, na Projektech/Nápadech založí nový
+projekt/nápad, v detailu projektu přidá úkol nebo poznámku podle toho, který
+tab je aktivní.
 
 Vpravo nahoře je tečka indikující stav synchronizace (klik na ni otevře
 Nastavení): **zelená** = přímo na zařízení, nebo nedávno synchronizováno;
 **žlutá** = synchronizováno, ale ne v poslední hodině; **červená** = víc
 než den bez synchronizace (nebo nikdy).
+
+## Architektura ukládání dat
+
+Zařízení má na flash dvě oddělené LittleFS partition (viz `partitions.csv`):
+- **`spiffs`** – statické soubory appky (`data/` – HTML/JS/CSS/ikony).
+  Tuhle partition přepisuje `pio run --target uploadfs` při každé aktualizaci
+  frontendu.
+- **`userdata`** – uložené úkoly/projekty/nápady/poznámky
+  (`/tasks.json`, `/categories.json`, `/notes.json`). Firmware ji montuje
+  jako druhou, nezávislou LittleFS instanci (`UserFs` v `src/main.cpp`) –
+  `uploadfs` se jí vůbec nedotkne.
+
+Tohle oddělení je záměrné: bez něj by každá aktualizace frontendu (běžná
+věc) nenávratně smazala všechna uložená data.
 
 ## Jak funguje synchronizace
 

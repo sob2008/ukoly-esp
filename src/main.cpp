@@ -22,9 +22,15 @@ const int STATUS_LED = 2;                       // uprav podle konkrétní desky
 const char *NTP_SERVER = "pool.ntp.org";
 const char *TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 
-// Datové soubory na LittleFS
-const char *CATEGORIES_FILE = "/categories.json";
+// Datové soubory appky - zijou na VLASTNI partition "userdata" (viz
+// partitions.csv), nezavisle na partition "spiffs" se statickymi soubory
+// appky (data/). Diky tomu "pio run --target uploadfs" (ktery pri kazde
+// aktualizaci frontendu prepise CELOU partition "spiffs") nikdy nesmaze
+// ulozene ukoly/projekty/napady/poznamky.
+fs::LittleFSFS UserFs;
+const char *CATEGORIES_FILE = "/categories.json"; // projekty i napady (rozliseno polem "type")
 const char *TASKS_FILE = "/tasks.json";
+const char *NOTES_FILE = "/notes.json";
 
 // Smazané záznamy starší než tohle (v sekundách) se při čištění fyzicky odstraní
 const long PURGE_AGE_SECONDS = 30L * 24 * 60 * 60; // 30 dní
@@ -68,15 +74,16 @@ time_t nowTimestamp()
     return now;
 }
 
-// Načte JSON pole ze souboru; pokud soubor neexistuje nebo je poškozený, vrátí prázdné pole
+// Načte JSON pole ze souboru na partition "userdata"; pokud soubor neexistuje
+// nebo je poškozený, vrátí prázdné pole
 bool loadJsonArray(const char *path, JsonDocument &doc)
 {
-    if (!LittleFS.exists(path))
+    if (!UserFs.exists(path))
     {
         doc.to<JsonArray>();
         return true;
     }
-    File f = LittleFS.open(path, "r");
+    File f = UserFs.open(path, "r");
     if (!f)
     {
         doc.to<JsonArray>();
@@ -95,7 +102,7 @@ bool loadJsonArray(const char *path, JsonDocument &doc)
 
 bool saveJsonArray(const char *path, JsonDocument &doc)
 {
-    File f = LittleFS.open(path, "w");
+    File f = UserFs.open(path, "w");
     if (!f)
     {
         Serial.printf("Chyba: nelze zapsat %s\n", path);
@@ -125,8 +132,8 @@ void sendError(AsyncWebServerRequest *request, int code, const char *message)
 void purgeOldDeleted()
 {
     time_t now = nowTimestamp();
-    const char *files[] = {CATEGORIES_FILE, TASKS_FILE};
-    for (int i = 0; i < 2; i++)
+    const char *files[] = {CATEGORIES_FILE, TASKS_FILE, NOTES_FILE};
+    for (int i = 0; i < 3; i++)
     {
         JsonDocument doc;
         loadJsonArray(files[i], doc);
@@ -201,7 +208,7 @@ void setupRoutes()
         loadJsonArray(CATEGORIES_FILE, doc);
         sendJson(request, 200, doc); });
 
-    // POST /api/categories  { id?, name }
+    // POST /api/categories  { id?, name, type? }  -- type: "projekt" (vychozi) | "napad"
     auto categoriesHandler = new AsyncCallbackJsonWebHandler(
         "/api/categories",
         [](AsyncWebServerRequest *request, JsonVariant &json)
@@ -214,6 +221,7 @@ void setupRoutes()
                 return;
             }
             String id = body["id"] | "";
+            String type = body["type"] | "";
 
             JsonDocument doc;
             loadJsonArray(CATEGORIES_FILE, doc);
@@ -230,6 +238,15 @@ void setupRoutes()
                     if (id == catId)
                     {
                         cat["name"] = name;
+                        // typ pri prejmenovani/update nemenit, pokud neprisel
+                        if (type.length())
+                        {
+                            cat["type"] = type;
+                        }
+                        else if (!cat["type"].is<const char *>())
+                        {
+                            cat["type"] = "projekt";
+                        }
                         cat["updatedAt"] = (long)now;
                         cat["deleted"] = false;
                         target = cat;
@@ -243,6 +260,7 @@ void setupRoutes()
                 JsonObject newCat = arr.add<JsonObject>();
                 newCat["id"] = id.length() ? id : generateId();
                 newCat["name"] = name;
+                newCat["type"] = type.length() ? type : "projekt";
                 newCat["updatedAt"] = (long)now;
                 newCat["deleted"] = false;
                 target = newCat;
@@ -315,6 +333,7 @@ void setupRoutes()
                     JsonObject newCat = catArr.add<JsonObject>();
                     newCat["id"] = categoryId;
                     newCat["name"] = categoryName;
+                    newCat["type"] = "projekt";
                     newCat["updatedAt"] = (long)now;
                     newCat["deleted"] = false;
                     saveJsonArray(CATEGORIES_FILE, catDoc);
@@ -325,21 +344,43 @@ void setupRoutes()
             loadJsonArray(TASKS_FILE, doc);
             JsonArray arr = doc.as<JsonArray>();
 
-            JsonObject newTask = arr.add<JsonObject>();
+            // Pokud uz ukol s timhle id existuje (napr. opakovany/zdvojeny
+            // pozadavek pri synchronizaci), aktualizuj ho na miste misto
+            // slepeho pridani druhe kopie se stejnym id.
             String id = body["id"] | "";
-            newTask["id"] = id.length() ? id : generateId();
-            newTask["title"] = title;
-            newTask["description"] = body["description"] | "";
-            newTask["categoryId"] = categoryId;
-            newTask["priority"] = body["priority"] | "stredni";
-            newTask["deadline"] = body["deadline"] | "";
-            newTask["done"] = false;
-            newTask["updatedAt"] = (long)now;
-            newTask["deleted"] = false;
+            JsonObject target;
+            bool found = false;
+            if (id.length())
+            {
+                for (JsonObject t : arr)
+                {
+                    const char *tid = t["id"] | "";
+                    if (id == tid)
+                    {
+                        target = t;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found)
+            {
+                target = arr.add<JsonObject>();
+            }
+
+            target["id"] = id.length() ? id : generateId();
+            target["title"] = title;
+            target["description"] = body["description"] | "";
+            target["categoryId"] = categoryId;
+            target["priority"] = body["priority"] | "stredni";
+            target["deadline"] = body["deadline"] | "";
+            target["done"] = found ? (bool)(target["done"] | false) : false;
+            target["updatedAt"] = (long)now;
+            target["deleted"] = false;
 
             saveJsonArray(TASKS_FILE, doc);
             JsonDocument response;
-            response.set(newTask);
+            response.set(target);
             sendJson(request, 200, response);
         });
     server.addHandler(tasksCreateHandler);
@@ -438,6 +479,150 @@ void setupRoutes()
         }
         sendError(request, 404, "kategorie nenalezena"); });
 
+    // GET /api/notes  a  GET /api/notes?category=ID
+    server.on("/api/notes", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc;
+        loadJsonArray(NOTES_FILE, doc);
+        JsonArray arr = doc.as<JsonArray>();
+
+        if (request->hasParam("category")) {
+            String category = request->getParam("category")->value();
+            JsonDocument filtered;
+            JsonArray filteredArr = filtered.to<JsonArray>();
+            for (JsonObject n : arr) {
+                const char* cid = n["categoryId"] | "";
+                if (category == cid) {
+                    filteredArr.add(n);
+                }
+            }
+            sendJson(request, 200, filtered);
+            return;
+        }
+
+        sendJson(request, 200, doc); });
+
+    // POST /api/notes  { id?, categoryId, text }
+    auto notesCreateHandler = new AsyncCallbackJsonWebHandler(
+        "/api/notes",
+        [](AsyncWebServerRequest *request, JsonVariant &json)
+        {
+            JsonObject body = json.as<JsonObject>();
+            String text = body["text"] | "";
+            if (text.length() == 0)
+            {
+                sendError(request, 400, "text je povinny");
+                return;
+            }
+            String categoryId = body["categoryId"] | "";
+            time_t now = nowTimestamp();
+
+            JsonDocument doc;
+            loadJsonArray(NOTES_FILE, doc);
+            JsonArray arr = doc.as<JsonArray>();
+
+            // stejna ochrana proti duplicite jako u ukolu - viz komentar tam
+            String id = body["id"] | "";
+            JsonObject target;
+            bool found = false;
+            if (id.length())
+            {
+                for (JsonObject n : arr)
+                {
+                    const char *nid = n["id"] | "";
+                    if (id == nid)
+                    {
+                        target = n;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found)
+            {
+                target = arr.add<JsonObject>();
+            }
+
+            target["id"] = id.length() ? id : generateId();
+            target["categoryId"] = categoryId;
+            target["text"] = text;
+            target["updatedAt"] = (long)now;
+            target["deleted"] = false;
+
+            saveJsonArray(NOTES_FILE, doc);
+            JsonDocument response;
+            response.set(target);
+            sendJson(request, 200, response);
+        });
+    server.addHandler(notesCreateHandler);
+
+    // POST /api/notes/update  { id, ...zmenena pole }
+    auto notesUpdateHandler = new AsyncCallbackJsonWebHandler(
+        "/api/notes/update",
+        [](AsyncWebServerRequest *request, JsonVariant &json)
+        {
+            JsonObject body = json.as<JsonObject>();
+            String id = body["id"] | "";
+            if (id.length() == 0)
+            {
+                sendError(request, 400, "id je povinne");
+                return;
+            }
+
+            JsonDocument doc;
+            loadJsonArray(NOTES_FILE, doc);
+            JsonArray arr = doc.as<JsonArray>();
+
+            for (JsonObject n : arr)
+            {
+                const char *nid = n["id"] | "";
+                if (id == nid)
+                {
+                    for (JsonPair kv : body)
+                    {
+                        if (strcmp(kv.key().c_str(), "id") == 0)
+                            continue;
+                        n[kv.key()] = kv.value();
+                    }
+                    n["updatedAt"] = (long)nowTimestamp();
+                    saveJsonArray(NOTES_FILE, doc);
+                    JsonDocument response;
+                    response.set(n);
+                    sendJson(request, 200, response);
+                    return;
+                }
+            }
+            sendError(request, 404, "poznamka nenalezena");
+        });
+    server.addHandler(notesUpdateHandler);
+
+    // POST /api/notes/delete?id=X
+    server.on("/api/notes/delete", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("id")) {
+            sendError(request, 400, "id je povinne");
+            return;
+        }
+        String id = request->getParam("id")->value();
+
+        JsonDocument doc;
+        loadJsonArray(NOTES_FILE, doc);
+        JsonArray arr = doc.as<JsonArray>();
+
+        for (JsonObject n : arr) {
+            const char* nid = n["id"] | "";
+            if (id == nid) {
+                n["deleted"] = true;
+                n["updatedAt"] = (long)nowTimestamp();
+                saveJsonArray(NOTES_FILE, doc);
+                JsonDocument response;
+                response["ok"] = true;
+                sendJson(request, 200, response);
+                return;
+            }
+        }
+        sendError(request, 404, "poznamka nenalezena"); });
+
     server.onNotFound([](AsyncWebServerRequest *request)
                        {
         if (request->method() == HTTP_OPTIONS) {
@@ -457,10 +642,10 @@ void setup()
     pinMode(STATUS_LED, OUTPUT);
     digitalWrite(STATUS_LED, LOW);
 
-    // --- LittleFS ---
+    // --- LittleFS: staticke soubory appky (partition "spiffs", z data/) ---
     if (!LittleFS.begin(true))
     {
-        Serial.println("KRITICKA CHYBA: LittleFS se nepodarilo pripojit!");
+        Serial.println("KRITICKA CHYBA: LittleFS (spiffs) se nepodarilo pripojit!");
         ledMode = LED_FAST_BLINK;
         while (true)
         {
@@ -468,7 +653,21 @@ void setup()
             delay(10);
         }
     }
-    Serial.println("LittleFS pripojen.");
+    Serial.println("LittleFS (staticke soubory) pripojen.");
+
+    // --- LittleFS: runtime data appky (vlastni partition "userdata") ---
+    // Oddelene od staticky souboru schvalne - viz komentar u UserFs vyse.
+    if (!UserFs.begin(true, "/userdata", 10, "userdata"))
+    {
+        Serial.println("KRITICKA CHYBA: LittleFS (userdata) se nepodarilo pripojit!");
+        ledMode = LED_FAST_BLINK;
+        while (true)
+        {
+            updateLed();
+            delay(10);
+        }
+    }
+    Serial.println("LittleFS (userdata) pripojen.");
 
     // --- WiFi (WiFiManager) ---
     // autoConnect() nejdriv zkusi prihlasovaci udaje, ktere ESP32 samo

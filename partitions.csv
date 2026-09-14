@@ -1,0 +1,22 @@
+# Name,     Type, SubType,  Offset,   Size,     Flags
+# Vlastni layout pro 4MB flash (bez OTA - viz git historie, OTA byl
+# odstranen). Duvod vlastni tabulky misto vychoziho "default.csv":
+# oddelit RUNTIME data appky (ukoly/projekty/napady/poznamky) na VLASTNI
+# partition ("userdata"), aby je "pio run --target uploadfs" (ktery
+# pri kazde aktualizaci frontendu prepise CELY obsah partition "spiffs"
+# daty z data/) nikdy neprepsal. Predtim runtime data zila ve stejne
+# partition jako staticke soubory appky a kazdy uploadfs je nenavratne
+# smazal.
+#
+# "userdata" ma SubType 0x82 (vlastni cislo mimo standardni sadu), NE
+# "spiffs" - kdyby mela subtype "spiffs" take, nastroje PlatformIO pro
+# uploadfs/buildfs by nemely jak rozeznat, kterou ze dvou "spiffs"
+# partition maji flashovat (hledaji podle subtype retezce "spiffs").
+# Firmware ji montuje rucne jako druhou, nezavislou LittleFS instanci
+# (viz UserFs v src/main.cpp), ESP-IDF/PlatformIO tooling si jí jinak
+# vsimne jen jako obecne "data" partition.
+nvs,       data, nvs,      0x9000,   0x5000,
+factory,   app,  factory,  0x10000,  0x220000,
+spiffs,    data, spiffs,   0x230000, 0x1A0000,
+userdata,  data, 0x82,     0x3D0000, 0x20000,
+coredump,  data, coredump, 0x3F0000, 0x10000,

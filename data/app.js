@@ -11,6 +11,7 @@
   const STORAGE_KEYS = {
     tasks: "ukoly:tasks",
     categories: "ukoly:categories",
+    notes: "ukoly:notes",
     lastSyncAt: "ukoly:lastSyncAt",
     serverUrl: "ukoly:serverUrl",
   };
@@ -32,6 +33,7 @@
   let state = {
     tasks: loadArray(STORAGE_KEYS.tasks),
     categories: loadArray(STORAGE_KEYS.categories),
+    notes: loadArray(STORAGE_KEYS.notes),
   };
 
   function persistTasks() {
@@ -40,6 +42,10 @@
 
   function persistCategories() {
     saveArray(STORAGE_KEYS.categories, state.categories);
+  }
+
+  function persistNotes() {
+    saveArray(STORAGE_KEYS.notes, state.notes);
   }
 
   function nowSec() {
@@ -64,7 +70,8 @@
   // ============================================================
   const views = {
     tasks: $("#view-tasks"),
-    categories: $("#view-categories"),
+    projects: $("#view-projects"),
+    ideas: $("#view-ideas"),
     "category-detail": $("#view-category-detail"),
     calendar: $("#view-calendar"),
     settings: $("#view-settings"),
@@ -88,24 +95,33 @@
     btn.addEventListener("click", () => {
       switchView(btn.dataset.view);
       if (btn.dataset.view === "tasks") renderTasks();
-      if (btn.dataset.view === "categories") renderCategories();
+      if (btn.dataset.view === "projects") renderProjects();
+      if (btn.dataset.view === "ideas") renderIdeas();
       if (btn.dataset.view === "calendar") renderCalendar();
       if (btn.dataset.view === "settings") renderSettings();
     });
   });
 
   function updateFabVisibility() {
-    const visibleOn = ["tasks", "categories", "category-detail", "calendar"];
+    const visibleOn = ["tasks", "projects", "ideas", "category-detail", "calendar"];
     fabButton.classList.toggle("hidden-fab", !visibleOn.includes(currentView));
   }
 
   fabButton.addEventListener("click", () => {
-    if (currentView === "categories") {
-      openCategoryModal();
+    if (currentView === "projects") {
+      openCategoryModal("projekt");
+      return;
+    }
+    if (currentView === "ideas") {
+      openCategoryModal("napad");
       return;
     }
     if (currentView === "category-detail") {
-      openTaskModal({ lockCategoryId: currentCategoryId });
+      if (categoryDetailTab === "notes") {
+        openNoteModal(currentCategoryId);
+      } else {
+        openTaskModal({ lockCategoryId: currentCategoryId });
+      }
       return;
     }
     if (currentView === "calendar") {
@@ -133,8 +149,16 @@
       });
   }
 
-  function visibleCategories() {
-    return state.categories.filter((c) => !c.deleted);
+  function categoryType(cat) {
+    return cat.type === "napad" ? "napad" : "projekt"; // starsi zaznamy bez "type" = projekt
+  }
+
+  function visibleProjects() {
+    return state.categories.filter((c) => !c.deleted && categoryType(c) !== "napad");
+  }
+
+  function visibleIdeas() {
+    return state.categories.filter((c) => !c.deleted && categoryType(c) === "napad");
   }
 
   function categoryName(categoryId) {
@@ -157,6 +181,19 @@
 
   function isOverdue(task) {
     return !!task.deadline && !task.done && task.deadline < todayStr();
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[c]));
+  }
+  function escapeAttr(str) {
+    return escapeHtml(str);
   }
 
   // ============================================================
@@ -192,19 +229,6 @@
       </li>`;
   }
 
-  function escapeHtml(str) {
-    return String(str ?? "").replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    }[c]));
-  }
-  function escapeAttr(str) {
-    return escapeHtml(str);
-  }
-
   function bindTaskListEvents(listEl) {
     listEl.addEventListener("click", (e) => {
       const delBtn = e.target.closest('[data-action="delete"]');
@@ -222,7 +246,42 @@
   }
 
   // ============================================================
-  // SEKCE: ÚKOLY
+  // RENDER: seznam poznámek (jeden note-item)
+  // ============================================================
+  function noteItemHtml(note) {
+    const date = note.updatedAt
+      ? new Date(note.updatedAt * 1000).toLocaleString("cs-CZ", {
+          day: "numeric",
+          month: "numeric",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+    return `
+      <li class="note-item" data-id="${escapeAttr(note.id)}">
+        <div class="note-body">
+          <div class="note-text">${escapeHtml(note.text)}</div>
+          <div class="note-meta">${escapeHtml(date)}</div>
+        </div>
+        <button class="task-delete" data-action="delete-note" data-id="${escapeAttr(note.id)}" aria-label="Smazat poznámku">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m2 0-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7"/></svg>
+        </button>
+      </li>`;
+  }
+
+  function bindNoteListEvents(listEl) {
+    listEl.addEventListener("click", (e) => {
+      const delBtn = e.target.closest('[data-action="delete-note"]');
+      if (delBtn) {
+        deleteNote(delBtn.dataset.id);
+        renderCategoryDetail();
+      }
+    });
+  }
+
+  // ============================================================
+  // SEKCE: ÚKOLY (vše napříč projekty/nápady)
   // ============================================================
   const taskListEl = $("#task-list");
   const taskListEmptyEl = $("#task-list-empty");
@@ -237,11 +296,23 @@
   function renderCategorySelect() {
     const select = $("#task-category");
     const currentValue = select.value;
-    const cats = visibleCategories();
-    select.innerHTML =
-      `<option value="">Nezařazeno</option>` +
-      cats.map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join("") +
-      `<option value="__new__">+ nová kategorie…</option>`;
+    const projects = visibleProjects();
+    const ideas = visibleIdeas();
+    let html = `<option value="">Nezařazeno</option>`;
+    if (projects.length) {
+      html +=
+        `<optgroup label="Projekty">` +
+        projects.map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join("") +
+        `</optgroup>`;
+    }
+    if (ideas.length) {
+      html +=
+        `<optgroup label="Nápady">` +
+        ideas.map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join("") +
+        `</optgroup>`;
+    }
+    html += `<option value="__new__">+ nový projekt…</option>`;
+    select.innerHTML = html;
     if ([...select.options].some((o) => o.value === currentValue)) {
       select.value = currentValue;
     }
@@ -304,10 +375,10 @@
       if (categoryId === "__new__") {
         const newName = $("#task-new-category-name").value.trim();
         if (!newName) {
-          alert("Zadej název nové kategorie.");
+          alert("Zadej název nového projektu.");
           return;
         }
-        const cat = createCategory(newName);
+        const cat = createCategory(newName, "projekt");
         categoryId = cat.id;
       }
     }
@@ -318,17 +389,23 @@
     renderTasks();
     if (currentView === "category-detail") renderCategoryDetail();
     if (currentView === "calendar") renderCalendar();
-    renderCategories();
+    renderProjects();
   });
 
   // ============================================================
-  // MODAL: NOVÁ KATEGORIE
+  // MODAL: NOVÝ PROJEKT / NÁPAD
   // ============================================================
   const categoryModalOverlay = $("#category-modal-overlay");
   const categoryForm = $("#category-form");
+  let categoryModalType = "projekt";
 
-  function openCategoryModal() {
+  function openCategoryModal(type) {
+    categoryModalType = type;
     categoryForm.reset();
+    const isIdea = type === "napad";
+    $("#category-modal-title").textContent = isIdea ? "Nový nápad" : "Nový projekt";
+    $("#new-category-name-label").textContent = isIdea ? "Název nápadu" : "Název projektu";
+    $("#category-form-submit").textContent = isIdea ? "Založit nápad" : "Založit projekt";
     categoryModalOverlay.hidden = false;
     setTimeout(() => $("#new-category-name").focus(), 50);
   }
@@ -347,9 +424,42 @@
     const input = $("#new-category-name");
     const name = input.value.trim();
     if (!name) return;
-    createCategory(name);
+    createCategory(name, categoryModalType);
     closeCategoryModal();
-    renderCategories();
+    if (categoryModalType === "napad") renderIdeas();
+    else renderProjects();
+  });
+
+  // ============================================================
+  // MODAL: NOVÁ POZNÁMKA
+  // ============================================================
+  const noteModalOverlay = $("#note-modal-overlay");
+  const noteForm = $("#note-form");
+  let noteModalCategoryId = null;
+
+  function openNoteModal(categoryId) {
+    noteModalCategoryId = categoryId;
+    noteForm.reset();
+    noteModalOverlay.hidden = false;
+    setTimeout(() => $("#note-text").focus(), 50);
+  }
+
+  function closeNoteModal() {
+    noteModalOverlay.hidden = true;
+  }
+
+  $("#note-modal-close").addEventListener("click", closeNoteModal);
+  noteModalOverlay.addEventListener("click", (e) => {
+    if (e.target === noteModalOverlay) closeNoteModal();
+  });
+
+  noteForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("#note-text").value.trim();
+    if (!text) return;
+    createNote({ categoryId: noteModalCategoryId, text });
+    closeNoteModal();
+    renderCategoryDetail();
   });
 
   // ============================================================
@@ -391,14 +501,19 @@
     persistTasks();
     renderTasks();
     if (currentCategoryId) renderCategoryDetail();
-    renderCategories();
+    renderProjects();
+    renderIdeas();
     if (currentView === "calendar") renderCalendar();
   }
 
-  function createCategory(name) {
+  // ============================================================
+  // DATOVÉ OPERACE: PROJEKTY / NÁPADY (kategorie s "type")
+  // ============================================================
+  function createCategory(name, type = "projekt") {
     const cat = {
       id: newId(),
       name,
+      type,
       updatedAt: nowSec(),
       deleted: false,
     };
@@ -416,48 +531,91 @@
   }
 
   // ============================================================
-  // SEKCE: KATEGORIE (seznam)
+  // DATOVÉ OPERACE: POZNÁMKY
   // ============================================================
-  const categoryListEl = $("#category-list");
-  const categoryListEmptyEl = $("#category-list-empty");
-
-  function renderCategories() {
-    const cats = visibleCategories();
-    categoryListEl.innerHTML = cats
-      .map((c) => {
-        const openCount = state.tasks.filter(
-          (t) => !t.deleted && !t.done && t.categoryId === c.id
-        ).length;
-        return `
-          <li class="category-row" data-id="${escapeAttr(c.id)}">
-            <button class="category-main" data-action="open" data-id="${escapeAttr(c.id)}">
-              <span class="name">${escapeHtml(c.name)}</span>
-              <span class="count">${openCount}</span>
-            </button>
-            <svg class="icon chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-          </li>`;
-      })
-      .join("");
-    categoryListEmptyEl.classList.toggle("hidden", cats.length > 0);
+  function createNote({ categoryId, text }) {
+    const note = {
+      id: newId(),
+      categoryId: categoryId || "",
+      text,
+      updatedAt: nowSec(),
+      deleted: false,
+    };
+    state.notes.push(note);
+    persistNotes();
+    return note;
   }
 
-  categoryListEl.addEventListener("click", (e) => {
+  function deleteNote(id) {
+    const note = state.notes.find((n) => n.id === id);
+    if (!note) return;
+    note.deleted = true;
+    note.updatedAt = nowSec();
+    persistNotes();
+  }
+
+  // ============================================================
+  // SEKCE: PROJEKTY / NÁPADY (seznamy)
+  // ============================================================
+  const projectListEl = $("#project-list");
+  const projectListEmptyEl = $("#project-list-empty");
+  const ideaListEl = $("#idea-list");
+  const ideaListEmptyEl = $("#idea-list-empty");
+
+  function categoryRowHtml(c) {
+    const openCount = state.tasks.filter((t) => !t.deleted && !t.done && t.categoryId === c.id).length;
+    return `
+      <li class="category-row" data-id="${escapeAttr(c.id)}">
+        <button class="category-main" data-action="open" data-id="${escapeAttr(c.id)}">
+          <span class="name">${escapeHtml(c.name)}</span>
+          <span class="count">${openCount}</span>
+        </button>
+        <svg class="icon chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </li>`;
+  }
+
+  function renderProjects() {
+    const items = visibleProjects();
+    projectListEl.innerHTML = items.map(categoryRowHtml).join("");
+    projectListEmptyEl.classList.toggle("hidden", items.length > 0);
+  }
+
+  function renderIdeas() {
+    const items = visibleIdeas();
+    ideaListEl.innerHTML = items.map(categoryRowHtml).join("");
+    ideaListEmptyEl.classList.toggle("hidden", items.length > 0);
+  }
+
+  projectListEl.addEventListener("click", (e) => {
     const openBtn = e.target.closest('[data-action="open"]');
-    if (openBtn) {
-      openCategoryDetail(openBtn.dataset.id);
-    }
+    if (openBtn) openCategoryDetail(openBtn.dataset.id, "projects");
+  });
+  ideaListEl.addEventListener("click", (e) => {
+    const openBtn = e.target.closest('[data-action="open"]');
+    if (openBtn) openCategoryDetail(openBtn.dataset.id, "ideas");
   });
 
   // ============================================================
-  // SEKCE: DETAIL KATEGORIE
+  // SEKCE: DETAIL PROJEKTU / NÁPADU (úkoly + poznámky)
   // ============================================================
   let currentCategoryId = null;
+  let currentCategoryOrigin = "projects";
+  let categoryDetailTab = "tasks";
+
   const categoryDetailListEl = $("#category-detail-task-list");
   const categoryDetailEmptyEl = $("#category-detail-empty");
+  const categoryDetailNoteListEl = $("#category-detail-note-list");
+  const categoryDetailNotesEmptyEl = $("#category-detail-notes-empty");
   bindTaskListEvents(categoryDetailListEl);
+  bindNoteListEvents(categoryDetailNoteListEl);
 
-  function openCategoryDetail(categoryId) {
+  function openCategoryDetail(categoryId, origin) {
     currentCategoryId = categoryId;
+    currentCategoryOrigin = origin || "projects";
+    categoryDetailTab = "tasks";
+    $$("#detail-tabs .segmented-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === "tasks"));
+    $("#detail-tab-tasks").classList.remove("hidden");
+    $("#detail-tab-notes").classList.add("hidden");
     switchView("category-detail");
     renderCategoryDetail();
   }
@@ -465,27 +623,48 @@
   function renderCategoryDetail() {
     if (!currentCategoryId) return;
     $("#category-detail-title").textContent = categoryName(currentCategoryId);
-    const items = visibleTasks((t) => t.categoryId === currentCategoryId);
-    categoryDetailListEl.innerHTML = items.map((t) => taskItemHtml(t, { showCategory: false })).join("");
-    categoryDetailEmptyEl.classList.toggle("hidden", items.length > 0);
+
+    const taskItems = visibleTasks((t) => t.categoryId === currentCategoryId);
+    categoryDetailListEl.innerHTML = taskItems.map((t) => taskItemHtml(t, { showCategory: false })).join("");
+    categoryDetailEmptyEl.classList.toggle("hidden", taskItems.length > 0);
+
+    const noteItems = state.notes
+      .filter((n) => !n.deleted && n.categoryId === currentCategoryId)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    categoryDetailNoteListEl.innerHTML = noteItems.map(noteItemHtml).join("");
+    categoryDetailNotesEmptyEl.classList.toggle("hidden", noteItems.length > 0);
   }
 
+  $$("#detail-tabs .segmented-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      categoryDetailTab = btn.dataset.tab;
+      $$("#detail-tabs .segmented-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      $("#detail-tab-tasks").classList.toggle("hidden", categoryDetailTab !== "tasks");
+      $("#detail-tab-notes").classList.toggle("hidden", categoryDetailTab !== "notes");
+    });
+  });
+
   $("#category-detail-back").addEventListener("click", () => {
+    const origin = currentCategoryOrigin || "projects";
     currentCategoryId = null;
-    switchView("categories");
-    renderCategories();
+    switchView(origin);
+    if (origin === "ideas") renderIdeas();
+    else renderProjects();
   });
 
   $("#category-detail-delete").addEventListener("click", () => {
     if (!currentCategoryId) return;
     const name = categoryName(currentCategoryId);
     const taskCount = state.tasks.filter((t) => !t.deleted && t.categoryId === currentCategoryId).length;
-    const extra = taskCount > 0 ? `\n\n${taskCount} úkol(ů) v ní zůstane, jen se přeřadí do „Nezařazeno“.` : "";
-    if (!confirm(`Opravdu smazat kategorii „${name}“?${extra}`)) return;
+    const extra = taskCount > 0 ? `\n\n${taskCount} úkol(ů) v něm zůstane, jen se přeřadí do „Nezařazeno“.` : "";
+    const label = currentCategoryOrigin === "ideas" ? "nápad" : "projekt";
+    if (!confirm(`Opravdu smazat ${label} „${name}“?${extra}`)) return;
     deleteCategory(currentCategoryId);
+    const origin = currentCategoryOrigin || "projects";
     currentCategoryId = null;
-    switchView("categories");
-    renderCategories();
+    switchView(origin);
+    if (origin === "ideas") renderIdeas();
+    else renderProjects();
     renderTasks();
   });
 
@@ -706,7 +885,7 @@
       await fetch(`${baseUrl}/api/categories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: cat.id, name: cat.name }),
+        body: JSON.stringify({ id: cat.id, name: cat.name, type: cat.type || "projekt" }),
       });
     } catch (e) {
       /* tiché selhání, zkusí se pri pristim syncu */
@@ -735,6 +914,25 @@
     }
   }
 
+  async function pushNote(baseUrl, note) {
+    try {
+      const updateRes = await fetch(`${baseUrl}/api/notes/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(note),
+      });
+      if (updateRes.status === 404) {
+        await fetch(`${baseUrl}/api/notes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(note),
+        });
+      }
+    } catch (e) {
+      /* tiché selhání, zkusí se pri pristim syncu */
+    }
+  }
+
   let syncInProgress = false;
 
   async function runSync(manual = false) {
@@ -755,12 +953,14 @@
         return;
       }
 
-      const [catRes, taskRes] = await Promise.all([
+      const [catRes, taskRes, noteRes] = await Promise.all([
         fetch(`${baseUrl}/api/categories`),
         fetch(`${baseUrl}/api/tasks`),
+        fetch(`${baseUrl}/api/notes`),
       ]);
       const remoteCategories = await catRes.json();
       const remoteTasks = await taskRes.json();
+      const remoteNotes = await noteRes.json();
 
       const categoriesToPush = mergeCollections(
         state.categories,
@@ -769,6 +969,7 @@
         persistCategories
       );
       const tasksToPush = mergeCollections(state.tasks, remoteTasks, "tasks", persistTasks);
+      const notesToPush = mergeCollections(state.notes, remoteNotes, "notes", persistNotes);
 
       for (const cat of categoriesToPush) {
         await pushCategory(baseUrl, cat);
@@ -776,11 +977,15 @@
       for (const task of tasksToPush) {
         await pushTask(baseUrl, task);
       }
+      for (const note of notesToPush) {
+        await pushNote(baseUrl, note);
+      }
 
       localStorage.setItem(STORAGE_KEYS.lastSyncAt, String(Date.now()));
 
       renderTasks();
-      renderCategories();
+      renderProjects();
+      renderIdeas();
       if (currentCategoryId) renderCategoryDetail();
       if (currentView === "calendar") renderCalendar();
       renderSettings();
@@ -812,7 +1017,8 @@
   // ============================================================
   updateFabVisibility();
   renderTasks();
-  renderCategories();
+  renderProjects();
+  renderIdeas();
   renderCalendar();
   renderSettings();
   renderSyncIndicator();
