@@ -31,6 +31,7 @@ pio run --target upload
 ```
 
 Pořadí není striktně nutné, ale doporučuje se nejdřív nahrát souborový systém.
+Obojí je potřeba nahrát vždy přes USB – zařízení se samo neaktualizuje.
 
 ## První připojení k WiFi
 
@@ -42,12 +43,8 @@ síť **`Ukoly_Setup`**:
 3. Vyber domácí WiFi síť a zadej heslo.
 
 Zařízení se pak připojí a přihlašovací údaje si uloží (persistují v NVS na
-flash, přežijí restart i OTA aktualizaci firmware). Portál čeká 180 sekund –
-pokud vyprší, zařízení pokračuje bez WiFi (LED viz níže) a při dalším
-restartu to zkusí znovu.
-
-Stejný mechanismus používá i [tovární firmware](factory-ukoly-esp32/) –
-WiFi zadaná přes jeho portál funguje i pro ostrý firmware bez dalšího zásahu.
+flash, přežijí restart). Portál čeká 180 sekund – pokud vyprší, zařízení
+pokračuje bez WiFi (LED viz níže) a při dalším restartu to zkusí znovu.
 
 ## Jak zařízení najít v síti
 
@@ -101,54 +98,3 @@ bez možnosti offline provozu mimo domácí síť.
   „Synchronizovat teď“, případně se sync spustí automaticky při návratu appky
   do popředí.
 - Při konfliktu vyhrává záznam s novějším `updatedAt`.
-
-## OTA aktualizace
-
-Zařízení si samo na pozadí kontroluje [GitHub Releases](https://github.com/sob2008/ukoly-esp/releases)
-tohoto repozitáře (`src/OtaManager.cpp`, `handle()` v `loop()`, výchozí interval
-30 minut – `OTA_CHECK_INTERVAL_MS` v `src/OtaConfig.h`). Když najde novější tag
-`vX.Y.Z`, bezpečně stáhne `firmware.bin`, ověří SHA-256 checksum (povinný) a
-target (`firmware.json`), a nainstaluje ho do neaktivní OTA partition (`app1`,
-zatímco běží `app0`, a naopak) – běžící firmware se nikdy nepřepisuje. Pokud
-se nová verze po restartu neprokáže jako funkční, ESP32 bootloader ji sám
-zneplatní a vrátí se na předchozí verzi.
-
-Systém je port [`sob2008/esp-ota`](https://github.com/sob2008/esp-ota)
-(navrženého a testovaného pro ESP8266) na nativní ESP32 A/B OTA partition –
-proto tu chybí `OTA_MAX_BOOT_ATTEMPTS`: ESP32 bootloader řeší nepotvrzený
-boot nativně (přesně jeden pokus, žádné vlastní počítadlo netřeba – viz
-komentáře v `src/OtaManager.cpp`/`src/OtaConfig.h`).
-
-**Tovární (provisioning) firmware** – [`factory-ukoly-esp32/`](factory-ukoly-esp32/)
-je samostatný PlatformIO projekt, který se nahrává přes USB na nové/vrácené/
-resetované zařízení *místo* ostrého firmware: připojí ho k WiFi přes
-WiFiManager captive portal a rovnou mu nainstaluje nejnovější GitHub Release
-(stejným OTA klientem jako ostrý firmware). Užitečné, když chceš nové
-zařízení uvést do provozu jen s USB kabelem a telefonem, bez PlatformIO na
-počítači po ruce. Podrobnosti a omezení (WiFi ostrého firmware je pořád
-pevně zadrátovaná v kódu, ne přes portál) viz
-[`factory-ukoly-esp32/README.md`](factory-ukoly-esp32/README.md).
-
-**Vydání nové verze:**
-1. Uprav kód, otestuj lokálně (`pio run`).
-2. `./scripts/release.ps1 -Version 1.1.0` – nastaví `FIRMWARE_VERSION` v
-   `src/OtaConfig.h`, commitne, vytvoří tag `v1.1.0` a po potvrzení ho pushne.
-3. Push tagu spustí `.github/workflows/release.yml` – zkompiluje firmware
-   (PlatformIO), spočítá SHA-256 a vytvoří GitHub Release s `firmware.bin`,
-   `firmware.json` a `firmware.bin.sha256`.
-4. Zařízení si aktualizaci najde samo do 30 minut (nebo po restartu).
-
-OTA aktualizuje **jen firmware** (partitions `app0`/`app1`), ne obsah
-`data/` na LittleFS – změny frontendu se pořád nahrávají ručně přes
-`pio run --target uploadfs`.
-
-**Testy:** `test_host/test_ota_version.cpp` a `test_host/test_sha256.cpp` jsou
-host-side testy (běžný `g++`, žádný ESP32 toolchain potřeba):
-```bash
-g++ -std=c++17 -Wall -Wextra -o test_ota_version.exe test_host/test_ota_version.cpp src/OtaVersion.cpp
-g++ -std=c++17 -Wall -Wextra -o test_sha256.exe test_host/test_sha256.cpp src/Sha256.cpp
-```
-`src/OtaState.cpp`/`src/OtaManager.cpp` (závislé na LittleFS/WiFi/HTTPClient)
-lze ověřit jen reálnou kompilací (`pio run`) – co nelze ověřit bez fyzického
-zařízení: skutečný stažení+flash cyklus, chování bootloaderu při
-nepotvrzeném bootu, a celý rollback cyklus (vyžaduje záměrně vadný Release).

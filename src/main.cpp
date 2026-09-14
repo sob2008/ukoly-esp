@@ -11,10 +11,6 @@
 #include <ESPmDNS.h>
 #include <time.h>
 
-#include "OtaConfig.h"
-#include "OtaState.h"
-#include "OtaManager.h"
-
 // ============================================================
 // KONFIGURACE – uprav podle vlastní sítě a desky
 // ============================================================
@@ -447,20 +443,13 @@ void setup()
     }
     Serial.println("LittleFS pripojen.");
 
-    // --- OTA: nacist stav a rozhodnout o pripadnem rollbacku z minuleho
-    // cyklu - musi byt PRED pripojenim WiFi, viz OtaManager.h ---
-    OtaState::begin();
-    OtaManager::begin();
-
     // --- WiFi (WiFiManager) ---
     // autoConnect() nejdriv zkusi prihlasovaci udaje, ktere ESP32 samo
-    // persistuje v NVS z posledniho uspesneho pripojeni - stejny mechanismus
-    // pouziva i tovarni firmware (factory-ukoly-esp32/), takze WiFi zadana
-    // tam pres jeho portal funguje i tady beze zmeny kodu. Pokud se
-    // nepripoji (zadne ulozene udaje / spatne heslo / sit nedostupna),
-    // otevre blokujici captive portal (sit WIFI_SETUP_AP_NAME, 192.168.4.1)
-    // az do setConfigPortalTimeout() - po jeho vyprseni pokracuje dal bez
-    // WiFi, LED zustane pomalu blikat.
+    // persistuje v NVS z posledniho uspesneho pripojeni. Pokud se nepripoji
+    // (zadne ulozene udaje / spatne heslo / sit nedostupna), otevre
+    // blokujici captive portal (sit WIFI_SETUP_AP_NAME, 192.168.4.1) az do
+    // setConfigPortalTimeout() - po jeho vyprseni pokracuje dal bez WiFi,
+    // LED zustane pomalu blikat.
     ledMode = LED_SLOW_BLINK;
     WiFiManager wm;
     wm.setAPCallback([](WiFiManager *) {
@@ -527,17 +516,10 @@ void setup()
 
     server.begin();
     Serial.println("HTTP server bezi.");
-
-    // --- OTA: potvrdit, ze firmware funguje (HTTP server skutecne bezi) -
-    // jinak by bootloader pri pristim bootu tuto verzi automaticky
-    // rollbackoval, viz OtaManager.h ---
-    OtaManager::notifyApplicationHealthy();
 }
 
 void loop()
 {
-    OtaManager::handle();
-
     if (WiFi.status() != WL_CONNECTED)
     {
         ledMode = LED_SLOW_BLINK;

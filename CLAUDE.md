@@ -6,22 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `ukoly-esp32` je lokální webový úkolovník běžící přímo na ESP32 (PlatformIO,
 Arduino framework). Žádný cloud, žádná závislost na internetu — jen domácí
-WiFi. Skládá se z několika nezávislých částí:
+WiFi. Skládá se ze dvou nezávislých částí, které se nahrávají zvlášť:
 
-- **Firmware** (`src/main.cpp`) — WiFi, NTP čas, LittleFS úložiště, REST API
-  (ESPAsyncWebServer), mDNS (`http://ukoly.local`).
+- **Firmware** (`src/main.cpp`) — WiFi (WiFiManager), NTP čas, LittleFS
+  úložiště, REST API (ESPAsyncWebServer), mDNS (`http://ukoly.local`).
 - **Frontend** (`data/`) — vanilla JS PWA nahraná na LittleFS, kterou firmware
   servíruje jako statické soubory. Žádný build krok, žádné CDN závislosti —
   vše musí fungovat i bez internetu.
-- **OTA** (`src/Ota*.{h,cpp}`) — samoaktualizace firmware z GitHub Releases,
-  port [`sob2008/esp-ota`](https://github.com/sob2008/esp-ota) na nativní
-  ESP32 A/B partition. Viz sekce "OTA systém" níže a `README.md`.
-- **Tovární firmware** (`factory-ukoly-esp32/`) — samostatný PlatformIO
-  projekt pro prvotní uvedení zařízení do provozu přes USB + WiFi captive
-  portal. Viz sekce "Tovární firmware" níže.
 
-Firmware, frontend a tovární firmware se nahrávají/buildují nezávisle na
-sobě.
+Zařízení se neaktualizuje samo (žádné OTA) — firmware i frontend se vždy
+nahrávají ručně přes USB.
 
 Kompletní původní zadání je v `idea.md`.
 
@@ -37,11 +31,6 @@ pio run --target uploadfs    # nahraje data/ (frontend) na zařízení
 pio run --target upload      # nahraje firmware na zařízení
 pio device monitor           # sériová konzole, 115200 baud
 ```
-
-`factory-ukoly-esp32/` je vlastní PlatformIO projekt — stejné příkazy
-(`pio run`, `pio run --target upload`, `pio device monitor`) se spouští
-z tohoto podadresáře, ne z kořene repozitáře; nemá `--target uploadfs`
-(žádný `data/`).
 
 Frontend a firmware se nahrávají a mění nezávisle — po úpravě jen v `data/`
 stačí `uploadfs`, po úpravě jen `src/main.cpp` stačí `upload`.
@@ -67,7 +56,8 @@ síť. Server (ESP32) do UI nikdy nezasahuje přímo.
 Smazání je vždy měkké: nastaví se `deleted: true` a `updatedAt`, fyzicky se
 nic nemaže (kvůli sync algoritmu). Fyzické čištění starých smazaných záznamů
 (>30 dní) běží na ESP32 při startu a pak jednou denně (`purgeOldDeleted()`
-v `src/main.cpp`).
+v `src/main.cpp`). Kategorie se dají jen vytvářet/přejmenovávat, ne mazat —
+ani přes API, ani přes frontend (podle původního zadání).
 
 Merge algoritmus (`mergeCollections()` v `data/app.js`) je **last-write-wins**
 podle `updatedAt`: novější lokální záznam se pošle na server, novější serverový
@@ -91,17 +81,13 @@ konfigurační konstanty → pomocné funkce nad JSON soubory (`loadJsonArray`/
 `saveJsonArray` pracují vždy s celým polem najednou, žádná stránkovaná
 persistence) → stavová LED (neblokující, řízená v `loop()` přes `millis()`) →
 `setupRoutes()` registruje všechny REST endpointy → `setup()` postupně:
-LittleFS mount (kritická chyba = rychlé blikání LED navždy) → OTA state/begin
-→ WiFi (`WiFiManager::autoConnect()` — zkusí v NVS uložené údaje, jinak
-blokující captive portal `Ukoly_Setup`, viz `README.md` "První připojení
-k WiFi") → NTP (`configTzTime` s časovou zónou Prahy) → mDNS → počáteční
-purge → routy → `server.serveStatic("/", ...)` s `index.html` jako default
-file → `server.begin()` → `OtaManager::notifyApplicationHealthy()`.
-
-Flash je po přidání OTA + WiFiManager na **91.6 %** (1 200 193 / 1 310 720 B
-v OTA app partition) — málo rezervy pro další růst; nová funkčnost do
-firmware by se měla ověřovat reálnou kompilací (`pio run`) a sledovat
-hlášenou velikost.
+LittleFS mount (kritická chyba = rychlé blikání LED navždy) → WiFi
+(`WiFiManager::autoConnect()` — zkusí v NVS uložené údaje z posledního
+úspěšného připojení, jinak otevře blokující captive portal `Ukoly_Setup` na
+`192.168.4.1`, viz `README.md` "První připojení k WiFi") → NTP
+(`configTzTime` s časovou zónou Prahy) → mDNS → počáteční purge → routy →
+`server.serveStatic("/", ...)` s `index.html` jako default file →
+`server.begin()`.
 
 Všechny POST endpointy s JSON tělem (`/api/categories`, `/api/tasks`,
 `/api/tasks/update`) jsou registrované přes `AsyncCallbackJsonWebHandler`
@@ -128,52 +114,3 @@ Tři views v `index.html`/`style.css`: Úkoly (`#view-tasks`), Kategorie
 `sw.js` cachuje jen shell appky (cache-first) a explicitně ignoruje všechny
 `/api/*` požadavky — ty appka řeší sama přes `fetch` s timeoutem, ne přes
 service worker.
-
-### OTA systém (`src/Ota*.{h,cpp}`, `src/OtaConfig.h`)
-
-Port [`sob2008/esp-ota`](https://github.com/sob2008/esp-ota) (navrženého pro
-ESP8266) na ESP32. `OtaVersion.{h,cpp}` a `Sha256.{h,cpp}` jsou beze změny
-(platformově nezávislé, testované `test_host/`). `OtaState`/`OtaManager` jsou
-přepsané: ESP32 má nativní A/B OTA partition (`app0`/`app1`, viz
-`platformio.ini` → `default.csv`) a nativní rollback na úrovni bootloaderu
-(`esp_ota_mark_app_valid_cancel_rollback`, `ESP_OTA_IMG_PENDING_VERIFY`),
-takže tu na rozdíl od originálu **není** vlastní záloha firmware
-(`candidate.bin`/`last_good.bin`) ani počítadlo pokusů o boot
-(`OTA_MAX_BOOT_ATTEMPTS`) — bootloader povolí přesně jeden nepotvrzený boot a
-sám se vrátí na předchozí partition, pokud se do dalšího restartu nezavolá
-`OtaManager::notifyApplicationHealthy()`. `src/OtaState.cpp` drží už jen
-`pending_version`/`last_failed_version` v `/ota/state.json` (LittleFS) —
-detaily a zdůvodnění viz komentáře v `OtaManager.cpp::begin()` a
-`README.md`, sekce "OTA aktualizace".
-
-Integrace v `src/main.cpp`: `OtaState::begin()` + `OtaManager::begin()` hned
-po mountu LittleFS a **před** WiFi; `OtaManager::notifyApplicationHealthy()`
-až po `server.begin()` (signál "firmware funguje"); `OtaManager::handle()`
-na začátku `loop()`. Pořadí je důležité, neměň ho bez přečtení komentářů v
-`OtaManager.h`.
-
-Vydávání verzí: `scripts/release.ps1 -Version X.Y.Z` (nastaví
-`FIRMWARE_VERSION` v `src/OtaConfig.h`, commit, tag, push) →
-`.github/workflows/release.yml` (spouští se jen na tag `vX.Y.Z`, kompiluje
-přes PlatformIO, publikuje `firmware.bin`/`firmware.json`/`firmware.bin.sha256`
-jako GitHub Release). Nikdy nespouštět build/release automaticky na běžný
-push do `main`.
-
-### Tovární firmware (`factory-ukoly-esp32/`)
-
-Samostatný PlatformIO projekt (vlastní `platformio.ini` + `src/`), ne součást
-`src/` výše — PlatformIO/Arduino kompiluje každý projekt/sketch zvlášť,
-cross-projektový `#include` není možný, proto má vlastní kopie
-`Ota*.{h,cpp}` (identické s `src/`) a vlastní `OtaConfig.h`
-(`FIRMWARE_VERSION "0.0.0"`, krátký `OTA_CHECK_INTERVAL_MS` — jinak identická
-`FIRMWARE_TARGET`/`GITHUB_OWNER`/`GITHUB_REPOSITORY`, musí zůstat v souladu
-s `src/OtaConfig.h`). Připojuje WiFi přes stejný `WiFiManager` captive portal
-(`tzapu/WiFiManager`) jako `src/main.cpp`, jen s jiným AP názvem
-(`Ukoly_Provisioning` vs `Ukoly_Setup`) — přihlašovací údaje persistuje ESP32
-samo v NVS nezávisle na tom, který firmware zrovna běží, takže WiFi zadaná
-tady funguje beze změny i po přeinstalování na ostrý firmware. Po připojení
-rovnou stáhne a nainstaluje nejnovější GitHub Release stejným OTA klientem a
-restartuje se do něj; sám sebe už nikdy znovu nespustí. `!flash/` je
-univerzální flash skript z `sob2008/esp-ota` (needituj ho) — očekává Arduino
-IDE pojmenování (`*.ino.bin`), takže PlatformIO výstup je před použitím
-nutné přejmenovat (viz `factory-ukoly-esp32/README.md`).
