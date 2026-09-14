@@ -95,12 +95,19 @@ zneplatní a vrátí se na předchozí verzi.
 
 Systém je port [`sob2008/esp-ota`](https://github.com/sob2008/esp-ota)
 (navrženého a testovaného pro ESP8266) na nativní ESP32 A/B OTA partition –
-proto tu chybí `factory-template/` (tovární/provisioning firmware pro
-výrobu/expedici kusů zákazníkům) i `OTA_MAX_BOOT_ATTEMPTS`: tenhle projekt je
-jedno domácí zařízení s pevně zadrátovaným WiFi heslem, ne produkt s vlastní
-provisioning fází, a ESP32 bootloader řeší nepotvrzený boot nativně (přesně
-jeden pokus, žádné vlastní počítadlo netřeba – viz komentáře v
-`src/OtaManager.cpp`/`src/OtaConfig.h`).
+proto tu chybí `OTA_MAX_BOOT_ATTEMPTS`: ESP32 bootloader řeší nepotvrzený
+boot nativně (přesně jeden pokus, žádné vlastní počítadlo netřeba – viz
+komentáře v `src/OtaManager.cpp`/`src/OtaConfig.h`).
+
+**Tovární (provisioning) firmware** – [`factory-ukoly-esp32/`](factory-ukoly-esp32/)
+je samostatný PlatformIO projekt, který se nahrává přes USB na nové/vrácené/
+resetované zařízení *místo* ostrého firmware: připojí ho k WiFi přes
+WiFiManager captive portal a rovnou mu nainstaluje nejnovější GitHub Release
+(stejným OTA klientem jako ostrý firmware). Užitečné, když chceš nové
+zařízení uvést do provozu jen s USB kabelem a telefonem, bez PlatformIO na
+počítači po ruce. Podrobnosti a omezení (WiFi ostrého firmware je pořád
+pevně zadrátovaná v kódu, ne přes portál) viz
+[`factory-ukoly-esp32/README.md`](factory-ukoly-esp32/README.md).
 
 **Vydání nové verze:**
 1. Uprav kód, otestuj lokálně (`pio run`).
