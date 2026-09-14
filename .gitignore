@@ -2,3 +2,7 @@
 .vscode/
 test_host/*.exe
 test_host/*.o
+
+# sestavene binarky pro flash.py/flash.sh - vzdy se buildujou cerstve,
+# necommituji se (viz factory-ukoly-esp32/!flash/bin/README.md)
+factory-ukoly-esp32/!flash/bin/*.bin
